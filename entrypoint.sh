@@ -10,8 +10,8 @@ if [ "$1" = 'postgres' ]; then
 	mkdir -p "$PGDATA"
 	chown -R postgres "$PGDATA"
 
-	chmod g+s /run/postgresql
-	chown -R postgres /run/postgresql
+	chmod g+s /var/run/postgresql
+	chown -R postgres /var/run/postgresql
 
 	# look specifically for PG_VERSION, as it is expected in the DB dir
 	if [ ! -s "$PGDATA/PG_VERSION" ]; then
