@@ -17,7 +17,8 @@ RUN yum install -y http://yum.postgresql.org/9.4/redhat/rhel-6-x86_64/pgdg-redha
 	&& mkdir -p /var/run/postgresql && chown -R postgres /var/run/postgresql \
 	&& chmod +x /entrypoint.sh
 
-ENV PATH /usr/lib/postgresql/$PG_MAJOR/bin:$PATH
+ENV PATH /usr/pgsql-$PG_MAJOR/bin:$PATH
+
 ENV PGDATA /var/lib/postgresql/data
 VOLUME /var/lib/postgresql/data
 
