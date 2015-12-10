@@ -1,7 +1,5 @@
 FROM extvos/centos
-
 MAINTAINER "Mingcai SHEN <archsh@gmail.com>"
-
 ENV PG_MAJOR 9.4
 ENV PG_VERSION 9.4.4-1PGDG
 ENV LANG en_US.utf8
