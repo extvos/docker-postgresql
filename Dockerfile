@@ -129,7 +129,7 @@ VOLUME /var/lib/postgresql/data
 
 COPY entrypoint.sh /usr/local/bin/
 RUN ln -s usr/local/bin/entrypoint.sh / # backwards compat
-ENTRYPOINT ["entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]
 
 EXPOSE 5432
 CMD ["postgres"]
