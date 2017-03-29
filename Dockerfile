@@ -128,7 +128,7 @@ RUN mkdir -p "$PGDATA" && chown -R postgres:postgres "$PGDATA" && chmod 777 "$PG
 VOLUME /var/lib/postgresql/data
 
 COPY entrypoint.sh /usr/local/bin/
-RUN ln -s usr/local/bin/entrypoint.sh / # backwards compat
+RUN chmod +x /usr/local/bin/entrypoint.sh && ln -s usr/local/bin/entrypoint.sh / # backwards compat
 ENTRYPOINT ["/entrypoint.sh"]
 
 EXPOSE 5432
