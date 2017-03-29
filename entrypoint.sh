@@ -1,24 +1,68 @@
 #!/bin/bash
 set -e
 
-set_listen_addresses() {
-	sedEscapedValue="$(echo "$1" | sed 's/[\/&]/\\&/g')"
-	sed -ri "s/^#?(listen_addresses\s*=\s*)\S+/\1'$sedEscapedValue'/" "$PGDATA/postgresql.conf"
+# usage: file_env VAR [DEFAULT]
+#    ie: file_env 'XYZ_DB_PASSWORD' 'example'
+# (will allow for "$XYZ_DB_PASSWORD_FILE" to fill in the value of
+#  "$XYZ_DB_PASSWORD" from a file, especially for Docker's secrets feature)
+file_env() {
+	local var="$1"
+	local fileVar="${var}_FILE"
+	local def="${2:-}"
+	if [ "${!var:-}" ] && [ "${!fileVar:-}" ]; then
+		echo >&2 "error: both $var and $fileVar are set (but are exclusive)"
+		exit 1
+	fi
+	local val="$def"
+	if [ "${!var:-}" ]; then
+		val="${!var}"
+	elif [ "${!fileVar:-}" ]; then
+		val="$(< "${!fileVar}")"
+	fi
+	export "$var"="$val"
+	unset "$fileVar"
 }
+
+if [ "${1:0:1}" = '-' ]; then
+	set -- postgres "$@"
+fi
+
+# allow the container to be started with `--user`
+if [ "$1" = 'postgres' ] && [ "$(id -u)" = '0' ]; then
+	mkdir -p "$PGDATA"
+	chown -R postgres "$PGDATA"
+	chmod 700 "$PGDATA"
+
+	mkdir -p /var/run/postgresql
+	chown -R postgres /var/run/postgresql
+	chmod g+s /var/run/postgresql
+
+	# Create the transaction log directory before initdb is run (below) so the directory is owned by the correct user
+	if [ "$POSTGRES_INITDB_XLOGDIR" ]; then
+		mkdir -p "$POSTGRES_INITDB_XLOGDIR"
+		chown -R postgres "$POSTGRES_INITDB_XLOGDIR"
+		chmod 700 "$POSTGRES_INITDB_XLOGDIR"
+	fi
+
+	exec su-exec postgres "$BASH_SOURCE" "$@"
+fi
 
 if [ "$1" = 'postgres' ]; then
 	mkdir -p "$PGDATA"
-	chown -R postgres "$PGDATA"
-
-	chmod g+s /var/run/postgresql
-	chown -R postgres /var/run/postgresql
+	chown -R "$(id -u)" "$PGDATA" 2>/dev/null || :
+	chmod 700 "$PGDATA" 2>/dev/null || :
 
 	# look specifically for PG_VERSION, as it is expected in the DB dir
 	if [ ! -s "$PGDATA/PG_VERSION" ]; then
-		gosu postgres initdb
+		file_env 'POSTGRES_INITDB_ARGS'
+		if [ "$POSTGRES_INITDB_XLOGDIR" ]; then
+			export POSTGRES_INITDB_ARGS="$POSTGRES_INITDB_ARGS --xlogdir $POSTGRES_INITDB_XLOGDIR"
+		fi
+		eval "initdb --username=postgres $POSTGRES_INITDB_ARGS"
 
 		# check password first so we can output the warning before postgres
 		# messes it up
+		file_env 'POSTGRES_PASSWORD'
 		if [ "$POSTGRES_PASSWORD" ]; then
 			pass="PASSWORD '$POSTGRES_PASSWORD'"
 			authMethod=md5
@@ -41,29 +85,22 @@ if [ "$1" = 'postgres' ]; then
 			authMethod=trust
 		fi
 
-		{ echo; echo "host all all 0.0.0.0/0 $authMethod"; } >> "$PGDATA/pg_hba.conf"
+		{ echo; echo "host all all all $authMethod"; } | tee -a "$PGDATA/pg_hba.conf" > /dev/null
 
-		set_listen_addresses '' # we're going to start up postgres, but it's not ready for use yet (this is initialization), so don't listen to the outside world yet
+		# internal start of server in order to allow set-up using psql-client		
+		# does not listen on external TCP/IP and waits until start finishes
+		PGUSER="${PGUSER:-postgres}" \
+		pg_ctl -D "$PGDATA" \
+			-o "-c listen_addresses='localhost'" \
+			-w start
 
-		gosu postgres "$@" &
-		pid="$!"
-		for i in {30..0}; do
-			if echo 'SELECT 1' | psql --username postgres &> /dev/null; then
-				break
-			fi
-			echo 'PostgreSQL init process in progress...'
-			sleep 1
-		done
-		if [ "$i" = 0 ]; then
-			echo >&2 'PostgreSQL init process failed'
-			exit 1
-		fi
+		file_env 'POSTGRES_USER' 'postgres'
+		file_env 'POSTGRES_DB' "$POSTGRES_USER"
 
-		: ${POSTGRES_USER:=postgres}
-		: ${POSTGRES_DB:=$POSTGRES_USER}
+		psql=( psql -v ON_ERROR_STOP=1 )
 
 		if [ "$POSTGRES_DB" != 'postgres' ]; then
-			psql --username postgres <<-EOSQL
+			"${psql[@]}" --username postgres <<-EOSQL
 				CREATE DATABASE "$POSTGRES_DB" ;
 			EOSQL
 			echo
@@ -74,35 +111,31 @@ if [ "$1" = 'postgres' ]; then
 		else
 			op='CREATE'
 		fi
-
-		psql --username postgres <<-EOSQL
+		"${psql[@]}" --username postgres <<-EOSQL
 			$op USER "$POSTGRES_USER" WITH SUPERUSER $pass ;
 		EOSQL
 		echo
 
+		psql+=( --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" )
+
 		echo
 		for f in /docker-entrypoint-initdb.d/*; do
 			case "$f" in
-				*.sh)  echo "$0: running $f"; . "$f" ;;
-				*.sql) echo "$0: running $f"; psql --username postgres --dbname "$POSTGRES_DB" < "$f" && echo ;;
-				*)     echo "$0: ignoring $f" ;;
+				*.sh)     echo "$0: running $f"; . "$f" ;;
+				*.sql)    echo "$0: running $f"; "${psql[@]}" -f "$f"; echo ;;
+				*.sql.gz) echo "$0: running $f"; gunzip -c "$f" | "${psql[@]}"; echo ;;
+				*)        echo "$0: ignoring $f" ;;
 			esac
 			echo
 		done
 
-		if ! kill -s TERM "$pid" || ! wait "$pid"; then
-			echo >&2 'PostgreSQL init process failed'
-			exit 1
-		fi
-
-		set_listen_addresses '*'
+		PGUSER="${PGUSER:-postgres}" \
+		pg_ctl -D "$PGDATA" -m fast -w stop
 
 		echo
 		echo 'PostgreSQL init process complete; ready for start up.'
 		echo
 	fi
-
-	exec gosu postgres "$@"
 fi
 
 exec "$@"
