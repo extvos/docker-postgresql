@@ -129,6 +129,8 @@ VOLUME /var/lib/postgresql/data
 
 COPY entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh && ln -s usr/local/bin/entrypoint.sh / # backwards compat
+COPY 10-config.sh /docker-entrypoint-initdb.d/
+COPY 20-replication.sh /docker-entrypoint-initdb.d/
 ENTRYPOINT ["/entrypoint.sh"]
 
 EXPOSE 5432
