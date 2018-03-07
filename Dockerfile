@@ -2,8 +2,16 @@
 FROM extvos/alpine
 
 # alpine includes "postgres" user/group in base install
-# /etc/passwd:22:postgres:x:70:70::/var/lib/postgresql:/bin/sh
-# /etc/group:34:postgres:x:70:
+#   /etc/passwd:22:postgres:x:70:70::/var/lib/postgresql:/bin/sh
+#   /etc/group:34:postgres:x:70:
+# the home directory for the postgres user, however, is not created by default
+# see https://github.com/docker-library/postgres/issues/274
+RUN set -ex; \
+	postgresHome="$(getent passwd postgres)"; \
+	postgresHome="$(echo "$postgresHome" | cut -d: -f6)"; \
+	[ "$postgresHome" = '/var/lib/postgresql' ]; \
+	mkdir -p "$postgresHome"; \
+	chown -R postgres:postgres "$postgresHome"
 
 # su-exec (gosu-compatible) is installed further down
 
@@ -14,8 +22,8 @@ ENV LANG en_US.utf8
 RUN mkdir /docker-entrypoint-initdb.d
 
 ENV PG_MAJOR 9.6
-ENV PG_VERSION 9.6.2
-ENV PG_SHA256 0187b5184be1c09034e74e44761505e52357248451b0c854dddec6c231fe50c9
+ENV PG_VERSION 9.6.8
+ENV PG_SHA256 eafdb3b912e9ec34bdd28b651d00226a6253ba65036cb9a41cad2d9e82e3eb70
 
 RUN set -ex \
 	\
@@ -37,6 +45,7 @@ RUN set -ex \
 	&& apk add --no-cache --virtual .build-deps \
 		bison \
 		coreutils \
+		dpkg-dev dpkg \
 		flex \
 		gcc \
 #		krb5-dev \
@@ -47,7 +56,10 @@ RUN set -ex \
 		make \
 #		openldap-dev \
 		openssl-dev \
+# configure: error: prove not found
 		perl \
+# configure: error: Perl module IPC::Run is required to run TAP tests
+		perl-ipc-run \
 #		perl-dev \
 #		python-dev \
 #		python3-dev \
@@ -61,9 +73,14 @@ RUN set -ex \
 	&& awk '$1 == "#define" && $2 == "DEFAULT_PGSOCKET_DIR" && $3 == "\"/tmp\"" { $3 = "\"/var/run/postgresql\""; print; next } { print }' src/include/pg_config_manual.h > src/include/pg_config_manual.h.new \
 	&& grep '/var/run/postgresql' src/include/pg_config_manual.h.new \
 	&& mv src/include/pg_config_manual.h.new src/include/pg_config_manual.h \
+	&& gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)" \
+# explicitly update autoconf config.guess and config.sub so they support more arches/libcs
+	&& wget -O config/config.guess 'https://git.savannah.gnu.org/cgit/config.git/plain/config.guess?id=7d3d27baf8107b630586c962c057e22149653deb' \
+	&& wget -O config/config.sub 'https://git.savannah.gnu.org/cgit/config.git/plain/config.sub?id=7d3d27baf8107b630586c962c057e22149653deb' \
 # configure options taken from:
 # https://anonscm.debian.org/cgit/pkg-postgresql/postgresql.git/tree/debian/rules?h=9.5
 	&& ./configure \
+		--build="$gnuArch" \
 # "/usr/src/postgresql/src/backend/access/common/tupconvert.c:105: undefined reference to `libintl_gettext'"
 #		--enable-nls \
 		--enable-integer-datetimes \
@@ -96,11 +113,10 @@ RUN set -ex \
 	&& make -C contrib install \
 	\
 	&& runDeps="$( \
-		scanelf --needed --nobanner --recursive /usr/local \
-			| awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
+		scanelf --needed --nobanner --format '%n#p' --recursive /usr/local \
+			| tr ',' '\n' \
 			| sort -u \
-			| xargs -r apk info --installed \
-			| sort -u \
+			| awk 'system("[ -e /usr/local/lib/" $1 " ]") == 0 { next } { print "so:" $1 }' \
 	)" \
 	&& apk add --no-cache --virtual .postgresql-rundeps \
 		$runDeps \
@@ -120,18 +136,17 @@ RUN set -ex \
 # make the sample config easier to munge (and "correct by default")
 RUN sed -ri "s!^#?(listen_addresses)\s*=\s*\S+.*!\1 = '*'!" /usr/local/share/postgresql/postgresql.conf.sample
 
-RUN mkdir -p /var/run/postgresql && chown -R postgres:postgres /var/run/postgresql && chmod g+s /var/run/postgresql
+RUN mkdir -p /var/run/postgresql && chown -R postgres:postgres /var/run/postgresql && chmod 2777 /var/run/postgresql
 
-ENV PATH /usr/lib/postgresql/$PG_MAJOR/bin:$PATH
 ENV PGDATA /var/lib/postgresql/data
 RUN mkdir -p "$PGDATA" && chown -R postgres:postgres "$PGDATA" && chmod 777 "$PGDATA" # this 777 will be replaced by 700 at runtime (allows semi-arbitrary "--user" values)
 VOLUME /var/lib/postgresql/data
 
-COPY entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/entrypoint.sh && ln -s usr/local/bin/entrypoint.sh / # backwards compat
+COPY docker-entrypoint.sh /usr/local/bin/
 COPY 10-config.sh /docker-entrypoint-initdb.d/
 COPY 20-replication.sh /docker-entrypoint-initdb.d/
-ENTRYPOINT ["/entrypoint.sh"]
+RUN ln -s usr/local/bin/docker-entrypoint.sh / # backwards compat
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 EXPOSE 5432
 CMD ["postgres"]
