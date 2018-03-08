@@ -35,8 +35,8 @@ file_env 'REPLICATION_PASSWORD' ""
 file_env 'REPLICATION_NETWORK' '0.0.0.0/0'
 
 # slave settings
-ENV 'POSTGRES_MASTER_HOST' 'localhost'
-ENV 'POSTGRES_MASTER_PORT' 5432
+file_env 'POSTGRES_MASTER_HOST' 'localhost'
+file_env 'POSTGRES_MASTER_PORT' 5432
 
 echo [*] configuring $REPLICATION_ROLE instance
 
