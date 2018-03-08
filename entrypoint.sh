@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 # usage: file_env VAR [DEFAULT]
@@ -34,8 +34,8 @@ if [ "$1" = 'postgres' ] && [ "$(id -u)" = '0' ]; then
 	chmod 700 "$PGDATA"
 
 	mkdir -p /var/run/postgresql
-	chown -R postgres /var/run/postgresql /var/lib/postgresql
-	chmod g+s /var/run/postgresql
+	chown -R postgres /var/run/postgresql
+	chmod 775 /var/run/postgresql
 
 	# Create the transaction log directory before initdb is run (below) so the directory is owned by the correct user
 	if [ "$POSTGRES_INITDB_XLOGDIR" ]; then
@@ -85,9 +85,12 @@ if [ "$1" = 'postgres' ]; then
 			authMethod=trust
 		fi
 
-		{ echo; echo "host all all all $authMethod"; } | tee -a "$PGDATA/pg_hba.conf" > /dev/null
+		{
+			echo
+			echo "host all all all $authMethod"
+		} >> "$PGDATA/pg_hba.conf"
 
-		# internal start of server in order to allow set-up using psql-client		
+		# internal start of server in order to allow set-up using psql-client
 		# does not listen on external TCP/IP and waits until start finishes
 		PGUSER="${PGUSER:-postgres}" \
 		pg_ctl -D "$PGDATA" \
