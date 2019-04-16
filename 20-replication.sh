@@ -57,6 +57,8 @@ elif [ $REPLICATION_ROLE = "slave" ]; then
          --progress \
          --verbose
 
+    # slave settings, ignored on master
+    echo "hot_standby = on" >> "$PGDATA/postgresql.conf"
     # useless postgres start to fullfil docker-entrypoint.sh stop
     pg_ctl -D "$PGDATA" \
          -o "-c listen_addresses=''" \
