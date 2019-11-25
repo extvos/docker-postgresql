@@ -7,3 +7,4 @@ RUN apk update && apk add tzdata \
     && update-ca-certificates
 COPY 10-config.sh /docker-entrypoint-initdb.d/
 COPY 20-replication.sh /docker-entrypoint-initdb.d/
+USER postgres
