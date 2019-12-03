@@ -1,4 +1,4 @@
-FROM postgres:9.6.8-alpine
+FROM postgres:9.6-alpine
 RUN apk update && apk add tzdata \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
     && echo "Asia/Shanghai" >  /etc/timezone \
@@ -7,4 +7,4 @@ RUN apk update && apk add tzdata \
     && update-ca-certificates
 COPY 10-config.sh /docker-entrypoint-initdb.d/
 COPY 20-replication.sh /docker-entrypoint-initdb.d/
-USER postgres
+#USER postgres
