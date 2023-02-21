@@ -32,7 +32,7 @@ RUN set -ex \
     && make install \
     && cd / \
     && unzip zhparser.zip \
-    && cd /zhparser-master \
+    && cd /zhparser-0.2.0 \
     && SCWS_HOME=/usr/local make && make install \
 # pg_trgm is recommend but not required.
     && echo -e "CREATE EXTENSION pg_trgm; \n\
