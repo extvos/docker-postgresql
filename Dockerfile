@@ -12,7 +12,7 @@ RUN set -ex \
         openssl \
         tar \
     && wget -q -O - "http://www.xunsearch.com/scws/down/scws-1.2.3.tar.bz2" | tar xjf - \
-    && wget -O zhparser.zip "https://github.com/amutu/zhparser/archive/master.zip" \
+    && wget -O zhparser.zip "https://github.com/amutu/zhparser/archive/refs/tags/v0.2.0.zip" \
     && wget -O postgresql.tar.bz2 "https://ftp.postgresql.org/pub/source/v$PG_VERSION/postgresql-$PG_VERSION.tar.bz2" \
     && echo "$PG_SHA256 *postgresql.tar.bz2" | sha256sum -c - \
     && mkdir -p /usr/src/postgresql \
