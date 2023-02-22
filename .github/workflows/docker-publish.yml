@@ -3,7 +3,7 @@ name: docker-publish
 on:
   push:
     branches:
-      - 'develop'
+      - 'master'
 
 jobs:
   docker:
@@ -30,4 +30,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: extvos/postgresql:develop
+          tags: extvos/postgresql:latest
